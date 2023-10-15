@@ -135,6 +135,14 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
 
         $svea = \Svea\WebPay\WebPay::createOrder($conf);
 
+        $this->load->model('extension/payment/svea_common');
+        $confirmation_url = $this->url->link('extension/payment/svea_invoice/confirmation', [
+            'order_id' => (int)$this->session->data['order_id'],
+            'order_uuid' => $this->model_extension_payment_svea_common->updateOrderUuid($this->session->data['order_id']),
+        ]);
+        $svea->setIdentificationConfirmationUrl(str_replace('&amp;', '&', $confirmation_url));
+        $svea->setIdentificationRejectionUrl(str_replace('&amp;', '&', $this->url->link('extension/payment/svea_invoice/rejection', 'order_id='.(int)$this->session->data['order_id'])));
+
         // Get the products in the cart
         $products = $this->cart->getProducts();
 
@@ -162,10 +170,10 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
         }
 
         $company = ($_GET['company'] == 'true') ? true : false;
-
+        
         if ($company == true) {
             $item = \Svea\WebPay\BuildOrder\RowBuilders\Item::companyCustomer();
-
+            
             $item = $item->setEmail($order['email'])
                 ->setCompanyName($order['payment_company'])
                 ->setStreetAddress($addressArr[1], $addressArr[2])
@@ -196,6 +204,7 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
                 $svea = $svea->setPeppolId($_GET['peppolid']);
             }
         } else {
+            
             $ssn = (isset($_GET['ssn'])) ? $_GET['ssn'] : 0;
 
             $item = \Svea\WebPay\BuildOrder\RowBuilders\Item::individualCustomer();
@@ -224,6 +233,7 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
         }
 
         try {
+
             $svea = $svea->setCountryCode($countryCode)
                 ->setCurrency($this->session->data['currency'])
                 ->setClientOrderNumber($this->session->data['order_id'])
@@ -233,6 +243,7 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
 
             // If CreateOrder accepted redirect to thankyou page
             if ($svea->accepted == 1) {
+
                 $sveaOrderAddress = $this->buildPaymentAddressQuery($svea, $countryCode, $order['comment']);
 
                 // If set to enforce shipping = billing, fetch billing address
@@ -246,9 +257,11 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
 
                 // If Auto deliver order is set, DeliverOrder
                 if ($this->config->get($this->paymentString . 'svea_invoice_auto_deliver') === '1') {
+
                     $deliverObj = \Svea\WebPay\WebPay::deliverOrder($conf);
 
                     try {
+
                         $deliverObj = $deliverObj->setCountryCode($countryCode)
                             ->setOrderId($svea->sveaOrderId)
                             ->setInvoiceDistributionType($this->config->get($this->paymentString . 'svea_invoice_distribution_type'))
@@ -267,32 +280,62 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
                             $response = array("error" => $this->responseCodes($deliverObj->resultcode, $deliverObj->errormessage));
                         }
                     } catch (Exception $e) {
-                        $this->log->write($e->getMessage());
+
                         $response = array("error" => $this->responseCodes(0, $e->getMessage()));
 
                         $this->response->addHeader('Content-Type: application/json');
                         $this->response->setOutput(json_encode($response));
                     }
                 } else {
-                    $response = array("success" => true);
-                    //update order status for created
-                    $this->model_checkout_order->addOrderHistory($this->session->data['order_id'], $this->config->get('config_order_status_id'), 'Svea order id '. $svea->sveaOrderId, true);
+
+                    if (!empty($svea->redirectUrl)) {
+                        $response = array("success" => true, "redirect" => $svea->redirectUrl);
+                        $this->load->model('extension/payment/svea_common');
+                        $current_order_status_id = $this->model_extension_payment_svea_common->getOrderStatusId($this->session->data['order_id']);
+                        $this->model_checkout_order->addOrderHistory($this->session->data['order_id'], $current_order_status_id, 'Svea order id '. $svea->sveaOrderId, true);
+                    } else {
+                        $response = array("success" => true);
+                        $this->model_checkout_order->addOrderHistory($this->session->data['order_id'], $this->config->get('config_order_status_id'), 'Svea order id '. $svea->sveaOrderId, true);
+                    }
+
+                    // $response = array("success" => true);
+                    // //update order status for created
+                    // $this->model_checkout_order->addOrderHistory($this->session->data['order_id'], $this->config->get('config_order_status_id'), 'Svea order id '. $svea->sveaOrderId, true);
                 }
 
                 // not accepted, send errors to view
             } else {
+
                 $response = array("error" => $this->responseCodes($svea->resultcode, $svea->errormessage));
             }
 
             $this->response->addHeader('Content-Type: application/json');
             $this->response->setOutput(json_encode($response));
         } catch (Exception $e) {
-            $this->log->write($e->getMessage());
             $response = array("error" => $this->responseCodes(0, $e->getMessage()));
 
             $this->response->addHeader('Content-Type: application/json');
             $this->response->setOutput(json_encode($response));
         }
+    }
+
+    public function confirmation() {
+
+        $order_id = $this->request->get['order_id'] ?? '';
+        $order_uuid = $this->request->get['order_uuid'] ?? '';
+        $this->load->model('extension/payment/svea_common');
+        if ($order_uuid === $this->model_extension_payment_svea_common->getOrderUiid($order_id)) {
+            $this->load->model('checkout/order');
+            $this->model_checkout_order->addOrderHistory($order_id, $this->config->get('config_order_status_id'), 'Identification passed ', true);
+            $this->response->redirect($this->url->link('checkout/success', '', true));
+        } else {
+            $this->response->redirect($this->url->link('checkout/checkout', '', true));
+        }
+
+    }
+
+    public function rejection() {
+        $this->response->redirect($this->url->link('checkout/checkout', '', true));
     }
 
     private function handleGetAddressesError($getAddressesResult)
@@ -361,7 +404,6 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
             $this->response->setOutput(json_encode($result));
         } catch (Exception $e) {
             $response = array("error" => $this->responseCodes(0, $e->getMessage()));
-            $this->log->write($e->getMessage());
 
             $this->response->addHeader('Content-Type: application/json');
             $this->response->setOutput(json_encode($response));

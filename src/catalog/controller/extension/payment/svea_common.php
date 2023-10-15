@@ -46,6 +46,12 @@ class SveaCommon extends Controller
 
         return $svea;
     }
+    
+    protected function getAddonArticleNumberByCode($code) {
+        $article_numbers_by_codes = ['shipping' => 'fr'];
+        return isset($article_numbers_by_codes[$code]) ? $article_numbers_by_codes[$code] : $code;
+    }
+    
 
     public function addAddonRowsToSveaOrder($svea, $addons, $currencyValue)
     {
@@ -82,7 +88,7 @@ class SveaCommon extends Controller
                     ->setAmountIncVat(floatval($addon['value'] * $currencyValue) + $vat)
                     ->setVatPercent(round($addon['tax_rate']))
                     ->setName(isset($addon['title']) ? $addon['title'] : null)
-                    ->setArticleNumber($addon['code'])
+                    ->setArticleNumber($this->getAddonArticleNumberByCode($addon['code']))
                     ->setDescription(isset($addon['text']) ? $addon['text'] : null)
                 );
             } elseif ($addon['value'] < 0 && $addon['code'] == 'voucher') {

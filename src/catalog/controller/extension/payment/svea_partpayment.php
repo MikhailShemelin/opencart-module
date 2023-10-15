@@ -139,6 +139,14 @@ class ControllerExtensionPaymentSveapartpayment extends SveaCommon
 
         $svea = \Svea\WebPay\WebPay::createOrder($conf);
 
+        $this->load->model('extension/payment/svea_common');
+        $confirmation_url = $this->url->link('extension/payment/svea_partpayment/confirmation', [
+            'order_id' => (int)$this->session->data['order_id'],
+            'order_uuid' => $this->model_extension_payment_svea_common->updateOrderUuid($this->session->data['order_id']),
+        ]);
+        $svea->setIdentificationConfirmationUrl(str_replace('&amp;', '&', $confirmation_url));
+        $svea->setIdentificationRejectionUrl(str_replace('&amp;', '&', $this->url->link('extension/payment/svea_partpayment/rejection', 'order_id='.(int)$this->session->data['order_id'])));
+
         // Get the products in the cart
         $products = $this->cart->getProducts();
 
@@ -233,10 +241,21 @@ class ControllerExtensionPaymentSveapartpayment extends SveaCommon
                         $this->response->setOutput(json_encode($response));
                     }
                 } else {
-                    $response = array("success" => true);
 
-                    // Update order status for created
-                    $this->model_checkout_order->addOrderHistory($this->session->data['order_id'], $this->config->get('config_order_status_id'), 'Svea order id: '. $svea->sveaOrderId, true);
+                    if (!empty($svea->redirectUrl)) {
+                        $response = array("success" => true, "redirect" => $svea->redirectUrl);
+                        $this->load->model('extension/payment/svea_common');
+                        $current_order_status_id = $this->model_extension_payment_svea_common->getOrderStatusId($this->session->data['order_id']);
+                        $this->model_checkout_order->addOrderHistory($this->session->data['order_id'], $current_order_status_id, 'Svea order id '. $svea->sveaOrderId, true);
+                    } else {
+                        $response = array("success" => true);
+                        $this->model_checkout_order->addOrderHistory($this->session->data['order_id'], $this->config->get('config_order_status_id'), 'Svea order id '. $svea->sveaOrderId, true);
+                    }
+
+                    // $response = array("success" => true);
+
+                    // // Update order status for created
+                    // $this->model_checkout_order->addOrderHistory($this->session->data['order_id'], $this->config->get('config_order_status_id'), 'Svea order id: '. $svea->sveaOrderId, true);
                 }
             } else {
                 $response = array("error" => $this->responseCodes($svea->resultcode, $svea->errormessage));
@@ -296,6 +315,25 @@ class ControllerExtensionPaymentSveapartpayment extends SveaCommon
             }
         }
         return $result;
+    }
+
+    public function confirmation() {
+
+        $order_id = $this->request->get['order_id'] ?? '';
+        $order_uuid = $this->request->get['order_uuid'] ?? '';
+        $this->load->model('extension/payment/svea_common');
+        if ($order_uuid === $this->model_extension_payment_svea_common->getOrderUiid($order_id)) {
+            $this->load->model('checkout/order');
+            $this->model_checkout_order->addOrderHistory($order_id, $this->config->get('config_order_status_id'), 'Identification passed ', true);
+            $this->response->redirect($this->url->link('checkout/success', '', true));
+        } else {
+            $this->response->redirect($this->url->link('checkout/checkout', '', true));
+        }
+
+    }
+
+    public function rejection() {
+        $this->response->redirect($this->url->link('checkout/checkout', '', true));
     }
 
     private function handleGetAddressesError($getAddressesResult)
