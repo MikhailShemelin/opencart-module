@@ -1,12 +1,5 @@
 # Svea PHP Integration Package Documentation
 
-### Current build status
-| Branch                            | Build status                               |
-|---------------------------------- |------------------------------------------- |
-| master (latest release)           | [![Build Status](https://travis-ci.org/sveawebpay/php-integration.png?branch=master)](https://travis-ci.org/sveawebpay/php-integration) |
-| develop                           | [![Build Status](https://travis-ci.org/sveawebpay/php-integration.png?branch=develop)](https://travis-ci.org/sveawebpay/php-integration) |
-
-
 ## Index <a name="index"></a>
 
 * [I. Introduction](#i-introduction)
@@ -150,9 +143,9 @@ You should also add information about your integration platform (i.e. Magento, O
 
 When configured, the integration properties information will be passed to Svea alongside the various service requests.
 
-See the provided example of how to customize the config files in the <a href="http://github.com/sveawebpay/php-integration/blob/master/example/config_getaddresses/" target="_blank">example/config_getaddresses/</a> folder.
+See the provided example of how to customize the config files in the [example/config_getaddresses/](example/config_getaddresses/)</a> folder.
 
-See the <a href="http://sveawebpay.github.io/php-integration/api/classes/ConfigurationProvider.html" target="_blank">ConfigurationProvider</a> interface and the provided <a href="http://github.com/sveawebpay/php-integration/blob/master/src/Config/config_test.php" target="_blank">example of config file</a> for more information.
+See the [ConfigurationProvider](src/Config/ConfigurationProvider.php) interface and the provided [example of config file](src/Config/config_test.php) for more information.
 
 [Back to top](#index)
 
@@ -208,6 +201,10 @@ $customerInformation->setNationalIdNumber("194605092222");
 
 // Add the customer to the order:
 $myOrder->addCustomerDetails($customerInformation);
+
+// If a stronger authentication is needed (invoice to SE for example) we need to tell where to redirect after successful/rejected authentication
+$myOrder->setIdentificationConfirmationUrl('https://mydomain.com/successful-authentication');
+$myOrder->setIdentificationRejectionUrl('https://mydomain.com/rejected-authentication');
 
 // We have now completed specifying the order, and wish to send the payment request to Svea. To do so, we first select the invoice payment method:
 $myInvoiceOrderRequest = $myOrder->useInvoicePayment();
@@ -2769,6 +2766,94 @@ $firstCampaignDescription = $response->values[0]['description'];            // i
 $pricePerMonthForFirstCampaign = $response->values[0]['pricePerMonth'];     // i.e. [pricePerMonth] => 201.66666666667
 ...
 ```
+
+### 9.2.3 getRequestTotals()
+If you find yourself in need of knowing what the order total at Svea will amount to before sending the request, you can use the `getRequestTotals()` method to get the amount including vat, amount excluding vat and total vat amount.
+
+For example, if your integration only handles integer order amounts, you may have to supply a compensation row with the order to ensure that the invoiced order total amount in Svea's system match your integration order totals:
+
+Your integration has the following order totals (in integers only) for an order containing one item:
+1 item at cost 1400 kr inclusive of 6% vat (i.e. 1321 kr excl vat, 79 kr vat in your system)
+
+The order row is specified using the following code, and then sent to Svea
+
+```php
+<?php
+$order = WebPay::createOrder($config)->
+         ->addOrderRow(
+         WebPayItem::orderRow()
+            ->setAmountIncVat(1400.00)
+            ->setVatPercent(6)
+            ->setQuantity(1)
+         );
+...
+$response = $order->useInvoicePayment->doRequest();
+```
+
+As Svea always re-calculate an order to a sum and a vat percentage, this order will be represented in Svea backoffice as:
+
+```
+Price (excl. VAT)   Price (incl. VAT)	Totalt netto	VAT%	Sum (incl. VAT)
+1320,75             1400.00             1320,75          6.00	1400,00
+                                        -------         -----   -------
+                                        1320,75         79,25	1400,00
+```
+
+If we try to make up the difference by adding a compensation (i.e. discount row):
+
+```php
+<?php
+$order->addDiscount( WebPayItem::fixedDiscount()
+                       ->setAmountIncVat(-0.25)    // a negative discount shows up as a positive adjustment
+                       ->setVatPercent(0)
+                   )
+                ...
+```
+
+it will show up as
+
+```
+Price (excl. VAT)   Price (incl. VAT)	Totalt netto	VAT%	Sum (incl. VAT)
+1320,75             1400.00             1320,75          6.00	1400,00
+0,25                0,25                0,25             0.00   0,25
+                                        -------         -----   -------
+                                        1321,00         79,25	1400,25
+```
+Which is not what we want.
+
+The correct way to do this is to send the order using the total amount incl. vat calculated from the item price ex. vat, and then add a discount row, that way the item row amount ex. vat and vat amount is correct, as well as the total amount charged to the customer:
+
+```php
+<?php
+$order = WebPay::createOrder($config)
+          ->addOrderRow(
+              WebPayItem::orderRow()
+                  ->setAmountIncVat(1400.26)
+                  ->setVatPercent(6)
+                  ->setQuantity(1)
+          )
+          ->addDiscount( WebPayItem::fixedDiscount()
+                          ->setAmountIncVat(-0.26)
+                          ->setVatPercent(0)
+                      )
+          ...
+```
+
+which will show up as
+
+```
+Price (excl. VAT)   Price (incl. VAT)	Totalt netto	VAT%	Sum (incl. VAT)
+1321,00             1400,26             1321,00          6.00	1400,26
+-0,26               -0,26               -0,26            0.00   -0,26
+                                        -------         -----   -------
+                                        1320,74         79,26	1400,00
+```
+
+Which is about as exact as we can get. (Unfortunately there is no way to introduce a discount of vat only, as you need to pay vat on the entire 1321 kr, regardless on the total amount actually charged to the customer.)
+
+`getRequestTotal()` for webservice requests returns the sums calculated for the orderRows as it will be handled in our systems. Returns an array with total_exvat, total_incvat and total_vat.
+
+[Back to top](#index)
 
 ### 9.3 Request validateOrder(), prepareRequest(), getRequestTotals() methods <a name="i9-3"></a>
 During module development or debugging, various informational methods may be of use as an alternative to `doRequest()` as the final step in the createOrder process in order to get more information about the actual request data that will be sent to Svea.
