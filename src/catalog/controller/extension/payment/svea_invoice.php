@@ -135,13 +135,17 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
 
         $svea = \Svea\WebPay\WebPay::createOrder($conf);
 
-        $this->load->model('extension/payment/svea_common');
-        $confirmation_url = $this->url->link('extension/payment/svea_invoice/confirmation', [
-            'order_id' => (int)$this->session->data['order_id'],
-            'order_uuid' => $this->model_extension_payment_svea_common->updateOrderUuid($this->session->data['order_id']),
-        ]);
-        $svea->setIdentificationConfirmationUrl(str_replace('&amp;', '&', $confirmation_url));
-        $svea->setIdentificationRejectionUrl(str_replace('&amp;', '&', $this->url->link('extension/payment/svea_invoice/rejection', 'order_id='.(int)$this->session->data['order_id'])));
+        $company = ($_GET['company'] == 'true') ? true : false;
+
+        if (!$company) {
+            $this->load->model('extension/payment/svea_common');
+            $confirmation_url = $this->url->link('extension/payment/svea_invoice/confirmation', [
+                'order_id'   => (int)$this->session->data['order_id'],
+                'order_uuid' => $this->model_extension_payment_svea_common->updateOrderUuid($this->session->data['order_id']),
+            ]);
+            $svea->setIdentificationConfirmationUrl(str_replace('&amp;', '&', $confirmation_url));
+            $svea->setIdentificationRejectionUrl(str_replace('&amp;', '&', $this->url->link('extension/payment/svea_invoice/rejection', 'order_id='.(int)$this->session->data['order_id'])));
+        }
 
         // Get the products in the cart
         $products = $this->cart->getProducts();
@@ -169,8 +173,6 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
             $addressArr[2] =  "";
         }
 
-        $company = ($_GET['company'] == 'true') ? true : false;
-        
         if ($company == true) {
             $item = \Svea\WebPay\BuildOrder\RowBuilders\Item::companyCustomer();
             
