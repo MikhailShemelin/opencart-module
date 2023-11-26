@@ -72,6 +72,9 @@ class ControllerExtensionPaymentSveapartpayment extends SveaCommon
         // We show the available payment plans w/monthly amounts as radiobuttons under the logo
         $data['paymentOptions'] = $this->getPaymentOptions();
 
+        $termsLink = '';
+        $companyName = '';
+
         if ($data['countryCode'] == "SE") {
             $termsLink = 'https://cdn.svea.com/webpay/sv-SE/terms_paymentplan_payment_20161005.pdf';
             $companyName = 'Svea Ekonomis';
