@@ -137,7 +137,8 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
 
         $company = ($_GET['company'] == 'true') ? true : false;
 
-        if (!$company) {
+        // for all: companies and individuals
+        //if (!$company) {
             $this->load->model('extension/payment/svea_common');
             $confirmation_url = $this->url->link('extension/payment/svea_invoice/confirmation', [
                 'order_id'   => (int)$this->session->data['order_id'],
@@ -145,7 +146,7 @@ class ControllerExtensionPaymentSveainvoice extends SveaCommon
             ]);
             $svea->setIdentificationConfirmationUrl(str_replace('&amp;', '&', $confirmation_url));
             $svea->setIdentificationRejectionUrl(str_replace('&amp;', '&', $this->url->link('extension/payment/svea_invoice/rejection', 'order_id='.(int)$this->session->data['order_id'])));
-        }
+        //}
 
         // Get the products in the cart
         $products = $this->cart->getProducts();
